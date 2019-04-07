@@ -1,0 +1,2 @@
+sha1sum:
+84f239a64fffe6cef8bbd226e9e2b23ba090a7e8  foss_lab_livecd_beta2.iso
