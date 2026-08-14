@@ -1,0 +1,27 @@
+---
+- name: Deploy zer0c00l.in static site and Nextcloud
+  hosts: all
+  become: true
+
+  roles:
+    # 1. Base packages, PHP 8.4, httpd, certbot, static files, symlink
+    - role: common
+
+    # 2. Security: fail2ban for SSH and Nextcloud protection
+    - role: fail2ban
+
+    # 3. Database for Nextcloud
+    - role: mariadb
+
+    # 4. Nextcloud application
+    - role: nextcloud
+
+    # 5. Apache vhost + SSL configuration
+    - role: apache
+
+    # 6. Obtain/renew Let's Encrypt certificates
+    - role: certbot
+
+    # 7. Validate that the site and Nextcloud are reachable over HTTPS
+    - role: validate
+

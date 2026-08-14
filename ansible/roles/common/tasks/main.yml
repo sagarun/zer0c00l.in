@@ -1,0 +1,97 @@
+---
+# Role: common
+# Installs EPEL/Remi repos, enables PHP 8.4 module stream, and installs required packages.
+
+- name: Update DNF metadata
+  ansible.builtin.dnf:
+    update_cache: true
+
+- name: Import EPEL GPG key (required for epel-release)
+  ansible.builtin.rpm_key:
+    key: https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-10
+    state: present
+
+- name: Install EPEL release (EL10)
+  ansible.builtin.dnf:
+    name: https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
+    state: present
+
+- name: Import Remi GPG key (required for remi-release)
+  ansible.builtin.rpm_key:
+    key: https://rpms.remirepo.net/RPM-GPG-KEY-remi2024
+    state: present
+
+- name: Install Remi release (EL10)
+  ansible.builtin.dnf:
+    name: https://rpms.remirepo.net/enterprise/remi-release-10.rpm
+    state: present
+
+- name: Enable PHP module stream remi-8.4
+  ansible.builtin.command: dnf -y module enable php:remi-8.4
+  register: common_php_module_enable
+  changed_when: "'Nothing to do' not in (common_php_module_enable.stdout | default(''))"
+
+- name: Install PHP module stream remi-8.4
+  ansible.builtin.command: dnf -y module install php:remi-8.4
+  register: common_php_module_install
+  changed_when: "'Nothing to do' not in (common_php_module_install.stdout | default(''))"
+
+- name: Install required packages
+  ansible.builtin.dnf:
+    name:
+      - mariadb-server
+      - mariadb
+      - httpd
+      - wget
+      - gzip
+      - tar
+      - unzip
+      - zip
+      - git
+      - vim
+      - bzip2
+      - php84-php
+      - php84-php-cli
+      - php84-php-common
+      - php84-php-fpm
+      - php84-php-gd
+      - php84-php-json
+      - php84-php-mbstring
+      - php84-php-mysqlnd
+      - php84-php-opcache
+      - php84-php-pdo
+      - php84-php-pecl-zip
+      - php84-php-process
+      - php84-php-sodium
+      - php84-php-xml
+      - php84-runtime
+      - certbot
+      - python3-certbot-apache
+      - python3-pip
+      - net-tools
+    state: present
+
+- name: Ensure PHP 8.4 memory limit is 512M
+  ansible.builtin.lineinfile:
+    path: /etc/opt/remi/php84/php.ini
+    regexp: '^\s*memory_limit\s*='
+    line: 'memory_limit = 512M'
+    backrefs: false
+
+- name: Ensure zer0c00l.in web root exists
+  ansible.builtin.file:
+    path: /var/www/zer0c00l.in/public_html
+    state: directory
+    owner: apache
+    group: apache
+    mode: "0755"
+
+- name: Deploy static site contents to zer0c00l.in web root
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../static/"
+    dest: /var/www/zer0c00l.in/public_html/
+    owner: apache
+    group: apache
+    mode: "0644"
+    directory_mode: "0755"
+

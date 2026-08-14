@@ -1,0 +1,29 @@
+---
+# Role: certbot
+# Ensures an Apache vhost on :80 exists, then obtains a Let's Encrypt certificate using certbot's apache plugin.
+
+- name: Ensure httpd and certbot packages are installed
+  ansible.builtin.dnf:
+    name:
+      - httpd
+      - certbot
+      - python3-certbot-apache
+    state: present
+
+  # Apache vhost and httpd service are now managed by the separate "apache" role.
+
+- name: Obtain/ensure Let's Encrypt certificate via apache plugin
+  ansible.builtin.command: >-
+    certbot --apache
+    -d {{ certbot_domain }}
+    {% for alias in certbot_server_aliases %}-d {{ alias }} {% endfor %}
+    -m {{ certbot_email }}
+    --agree-tos
+    --non-interactive
+    --keep-until-expiring
+    {{ '--redirect' if certbot_redirect else '' }}
+    {{ '--staging' if certbot_staging else '' }}
+  args:
+    creates: "/etc/letsencrypt/live/{{ certbot_domain }}/fullchain.pem"
+  register: certbot_result
+  changed_when: certbot_result.rc == 0

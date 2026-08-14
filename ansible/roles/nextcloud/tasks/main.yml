@@ -1,0 +1,68 @@
+---
+# Role: nextcloud
+# Downloads and installs Nextcloud to /var/www/html/nextcloud and configures config.php
+
+- name: Ensure Nextcloud install directory parent exists
+  ansible.builtin.file:
+    path: "{{ nextcloud_web_root }}"
+    state: directory
+    owner: "{{ nextcloud_http_user }}"
+    group: "{{ nextcloud_http_group }}"
+    mode: "0755"
+
+- name: Download Nextcloud archive
+  ansible.builtin.get_url:
+    url: "{{ nextcloud_download_url }}"
+    dest: "/tmp/nextcloud-{{ nextcloud_version }}.tar.bz2"
+    mode: "0644"
+
+- name: Remove existing Nextcloud directory if requested
+  ansible.builtin.file:
+    path: "{{ nextcloud_install_dir }}"
+    state: absent
+  when: nextcloud_reinstall | default(false)
+
+- name: Extract Nextcloud archive to web root
+  ansible.builtin.unarchive:
+    src: "/tmp/nextcloud-{{ nextcloud_version }}.tar.bz2"
+    dest: "{{ nextcloud_web_root }}"
+    remote_src: true
+    creates: "{{ nextcloud_install_dir }}/version.php"
+
+- name: Ensure Nextcloud directory ownership
+  ansible.builtin.file:
+    path: "{{ nextcloud_install_dir }}"
+    state: directory
+    recurse: true
+    owner: "{{ nextcloud_http_user }}"
+    group: "{{ nextcloud_http_group }}"
+
+- name: Ensure Nextcloud data directory exists
+  ansible.builtin.file:
+    path: /var/owncloud/data
+    state: directory
+    owner: "{{ nextcloud_http_user }}"
+    group: "{{ nextcloud_http_group }}"
+    mode: "0750"
+
+- name: Ensure Nextcloud config directory exists
+  ansible.builtin.file:
+    path: "{{ nextcloud_install_dir }}/config"
+    state: directory
+    owner: "{{ nextcloud_http_user }}"
+    group: "{{ nextcloud_http_group }}"
+    mode: "0750"
+
+- name: Deploy Nextcloud config.php
+  ansible.builtin.template:
+    src: config.php.j2
+    dest: "{{ nextcloud_install_dir }}/config/config.php"
+    owner: "{{ nextcloud_http_user }}"
+    group: "{{ nextcloud_http_group }}"
+    mode: "0640"
+
+- name: Create cloud symlink to Nextcloud under zer0c00l.in web root
+  ansible.builtin.file:
+    src: "{{ nextcloud_install_dir }}"
+    dest: /var/www/zer0c00l.in/public_html/cloud
+    state: link

@@ -1,0 +1,15 @@
+---
+# Defaults for fail2ban role
+
+fail2ban_ssh_enabled: true
+fail2ban_ssh_maxretry: 5
+fail2ban_ssh_bantime: 3600
+fail2ban_ssh_findtime: 600
+
+# Nextcloud fail2ban settings
+fail2ban_nextcloud_enabled: true
+fail2ban_nextcloud_maxretry: 3
+fail2ban_nextcloud_bantime: 86400
+fail2ban_nextcloud_findtime: 43200
+fail2ban_nextcloud_logpath: /var/owncloud/data/nextcloud.log
+fail2ban_nextcloud_ports: "80,443"

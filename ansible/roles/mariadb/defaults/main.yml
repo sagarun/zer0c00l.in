@@ -1,0 +1,11 @@
+---
+# Defaults for mariadb role
+mariadb_service_name: mariadb
+mariadb_unix_socket: /var/lib/mysql/mysql.sock
+
+nextcloud_db_name: nextcloud
+nextcloud_db_user: nextcloud
+nextcloud_db_host: localhost
+
+# Password is expected to be provided via Ansible Vault:
+# nextcloud_db_password: "..."

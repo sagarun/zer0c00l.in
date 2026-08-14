@@ -1,0 +1,37 @@
+---
+# Role: apache
+# Manages Apache vhost and SSL config for zer0c00l.in
+
+- name: Ensure httpd is installed
+  ansible.builtin.dnf:
+    name: httpd
+    state: present
+
+- name: Ensure vhost document root exists
+  ansible.builtin.file:
+    path: "{{ apache_document_root }}"
+    state: directory
+    owner: apache
+    group: apache
+    mode: "0755"
+
+- name: Install zer0c00l.in Apache vhost
+  ansible.builtin.template:
+    src: zer0c00l.conf.j2
+    dest: "/etc/httpd/conf.d/{{ apache_domain }}.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart httpd
+
+- name: Ensure httpd is enabled and running
+  ansible.builtin.service:
+    name: httpd
+    enabled: true
+    state: started
+
+- name: Restart php84-php-fpm after httpd
+  ansible.builtin.service:
+    name: php84-php-fpm
+    state: restarted
+

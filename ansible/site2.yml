@@ -1,0 +1,11 @@
+---
+- name: Deploy zer0c00l.in static site and Nextcloud
+  hosts: all
+  become: true
+
+  roles:
+    - role: nextcloud
+
+    # 6. Validate that the site is reachable over HTTPS
+    - role: validate
+

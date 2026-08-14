@@ -1,0 +1,33 @@
+---
+# Defaults for nextcloud role
+
+# Version and download URL
+nextcloud_version: "23.0.12"
+nextcloud_download_url: "https://download.nextcloud.com/server/releases/nextcloud-{{ nextcloud_version }}.tar.bz2"
+
+# Installation paths
+nextcloud_web_root: /var/www/html
+nextcloud_install_dir: "{{ nextcloud_web_root }}/nextcloud"
+
+# Web server user/group (adjust if different)
+nextcloud_http_user: apache
+nextcloud_http_group: apache
+
+# Database configuration
+nextcloud_db_name: nextcloud
+nextcloud_db_user: nextcloud
+nextcloud_db_host: localhost
+# Password is expected from vault: nextcloud_db_password
+
+# S3 primary storage configuration (non-secret parts)
+nextcloud_s3_bucket: "nextcloud.zer0c00l.in"
+nextcloud_s3_region: "us-west-1"
+nextcloud_s3_hostname: "s3.us-west-1.amazonaws.com"
+nextcloud_s3_port: 443
+nextcloud_s3_use_ssl: true
+nextcloud_s3_use_path_style: false
+nextcloud_s3_autocreate: true
+
+# Access key / secret should come from vault:
+# nextcloud_s3_access_key
+# nextcloud_s3_secret_key

@@ -1,0 +1,52 @@
+---
+# Role: mariadb
+# Starts/enables MariaDB and creates the Nextcloud database and user.
+
+- name: Ensure MariaDB server and Python MySQL driver are installed
+  ansible.builtin.dnf:
+    name:
+      - mariadb-server
+      - python3-PyMySQL
+    state: present
+
+- name: Ensure MariaDB configuration directory exists
+  ansible.builtin.file:
+    path: /etc/my.cnf.d
+    state: directory
+    mode: "0755"
+
+- name: Configure MariaDB to listen only on localhost
+  ansible.builtin.copy:
+    dest: /etc/my.cnf.d/bind-address.cnf
+    content: |
+      [mysqld]
+      bind-address = 127.0.0.1
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart mariadb
+
+- name: Ensure MariaDB is enabled and running
+  ansible.builtin.service:
+    name: "{{ mariadb_service_name }}"
+    enabled: true
+    state: started
+
+- name: Ensure Nextcloud database exists
+  community.mysql.mysql_db:
+    name: "{{ nextcloud_db_name }}"
+    state: present
+    encoding: utf8mb4
+    collation: utf8mb4_general_ci
+    login_user: root
+    login_unix_socket: "{{ mariadb_unix_socket }}"
+
+- name: Ensure Nextcloud database user exists with privileges
+  community.mysql.mysql_user:
+    name: "{{ nextcloud_db_user }}"
+    host: "{{ nextcloud_db_host }}"
+    password: "{{ nextcloud_db_password }}"
+    priv: "{{ nextcloud_db_name }}.*:ALL"
+    state: present
+    login_user: root
+    login_unix_socket: "{{ mariadb_unix_socket }}"

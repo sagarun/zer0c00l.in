@@ -1,0 +1,47 @@
+<?php
+$CONFIG = array (
+  'instanceid' => '{{ nextcloud_instance_id | default("oc" ~ 999999|random) }}',
+  'passwordsalt' => '{{ nextcloud_password_salt | default("") }}',
+  'secret' => '{{ nextcloud_secret | default("") }}',
+  'trusted_domains' =>
+  array (
+    0 => '{{ certbot_domain | default("zer0c00l.in") }}',
+  ),
+  'datadirectory' => '/var/owncloud/data',
+  'logfile' => '/var/owncloud/data/nextcloud.log',
+  'dbtype' => 'mysql',
+  'version' => '{{ nextcloud_version }}',
+  'overwrite.cli.url' => 'https://{{ certbot_domain | default("zer0c00l.in") }}',
+  'dbname' => '{{ nextcloud_db_name }}',
+  'dbhost' => '{{ nextcloud_db_host }}',
+  'dbport' => '',
+  'dbtableprefix' => 'oc_',
+  'mysql.utf8mb4' => true,
+  'dbuser' => '{{ nextcloud_db_user }}',
+  'dbpassword' => '{{ nextcloud_db_password }}',
+  'installed' => true,
+
+  'mail_smtpsecure' => 'tls',
+  'mail_smtphost' => 'smtp.zoho.com',
+  'mail_smtpport' => '587',
+  'updatechecker' => false,
+  'mail_from_address' => 'admin',
+  'mail_domain' => 'zer0c00l.in',
+  'updater.release.channel' => 'stable',
+  'mail_sendmailmode' => 'smtp',
+
+  'objectstore' => array(
+    'class' => '\\OC\\Files\\ObjectStore\\S3',
+    'arguments' => array(
+      'bucket' => '{{ nextcloud_s3_bucket }}',
+      'autocreate' => {{ nextcloud_s3_autocreate | ternary('true', 'false') }},
+      'key' => '{{ nextcloud_s3_access_key }}',
+      'secret' => '{{ nextcloud_s3_secret_key }}',
+      'region' => '{{ nextcloud_s3_region }}',
+      'hostname' => '{{ nextcloud_s3_hostname }}',
+      'port' => {{ nextcloud_s3_port }},
+      'use_ssl' => {{ nextcloud_s3_use_ssl | ternary('true', 'false') }},
+      'use_path_style' => {{ nextcloud_s3_use_path_style | ternary('true', 'false') }},
+    ),
+  ),
+);

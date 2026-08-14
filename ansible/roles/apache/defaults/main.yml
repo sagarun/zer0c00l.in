@@ -1,0 +1,6 @@
+---
+# Defaults for apache role
+
+apache_domain: zer0c00l.in
+apache_document_root: "/var/www/{{ apache_domain }}/public_html"
+apache_server_aliases: []

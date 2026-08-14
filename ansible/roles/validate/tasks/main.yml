@@ -1,0 +1,24 @@
+---
+# Role: validate
+# Verifies that the main site and Nextcloud (cloud) are reachable over HTTPS.
+
+- name: Wait briefly for httpd to settle
+  ansible.builtin.pause:
+    seconds: 5
+
+- name: Validate https://zer0c00l.in/ is reachable
+  ansible.builtin.uri:
+    url: "https://zer0c00l.in/"
+    method: GET
+    status_code: 200
+    validate_certs: true
+  register: validate_root
+
+- name: Validate https://zer0c00l.in/cloud/ is reachable
+  ansible.builtin.uri:
+    url: "https://zer0c00l.in/cloud/"
+    method: GET
+    status_code: 200
+    validate_certs: true
+  register: validate_cloud
+

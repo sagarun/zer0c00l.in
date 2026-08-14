@@ -1,0 +1,12 @@
+---
+# Defaults for certbot role
+certbot_domain: zer0c00l.in
+certbot_email: "admin@{{ certbot_domain }}"
+ # Add additional names (e.g. www domain) if desired
+certbot_server_aliases: []
+
+# Set true to test against Let's Encrypt staging environment
+certbot_staging: false
+
+# Whether to enable automatic HTTP->HTTPS redirect (certbot --redirect)
+certbot_redirect: false

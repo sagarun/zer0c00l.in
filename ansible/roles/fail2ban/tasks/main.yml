@@ -1,0 +1,55 @@
+---
+# Role: fail2ban
+# Installs and configures fail2ban to monitor SSH connections via /var/log/secure
+
+- name: Ensure fail2ban is installed
+  ansible.builtin.dnf:
+    name: fail2ban
+    state: present
+
+- name: Ensure fail2ban jail.local exists for SSH monitoring
+  ansible.builtin.template:
+    src: jail.local.j2
+    dest: /etc/fail2ban/jail.local
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart fail2ban
+
+- name: Ensure fail2ban filter directory exists
+  ansible.builtin.file:
+    path: /etc/fail2ban/filter.d
+    state: directory
+    mode: "0755"
+
+- name: Deploy Nextcloud fail2ban filter
+  ansible.builtin.template:
+    src: nextcloud.conf.j2
+    dest: /etc/fail2ban/filter.d/nextcloud.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart fail2ban
+  when: fail2ban_nextcloud_enabled | default(false)
+
+- name: Ensure fail2ban jail.d directory exists
+  ansible.builtin.file:
+    path: /etc/fail2ban/jail.d
+    state: directory
+    mode: "0755"
+
+- name: Deploy Nextcloud fail2ban jail
+  ansible.builtin.template:
+    src: nextcloud.local.j2
+    dest: /etc/fail2ban/jail.d/nextcloud.local
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart fail2ban
+  when: fail2ban_nextcloud_enabled | default(false)
+
+- name: Ensure fail2ban is enabled and running
+  ansible.builtin.service:
+    name: fail2ban
+    enabled: true
+    state: started
