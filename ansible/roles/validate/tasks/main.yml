@@ -15,10 +15,13 @@
   register: validate_root
 
 - name: Validate https://zer0c00l.in/cloud/ is reachable
+  # /cloud/ 302-redirects to /cloud/index.php/login, so follow redirects and
+  # accept the final 200.
   ansible.builtin.uri:
     url: "https://zer0c00l.in/cloud/"
     method: GET
     status_code: 200
+    follow_redirects: all
     validate_certs: true
   register: validate_cloud
 

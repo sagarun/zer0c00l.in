@@ -1,0 +1,67 @@
+---
+# Test playbook: runs the roles that CAN be exercised against a local Docker
+# target container (AlmaLinux 10 + sshd). It deliberately OMITS the two roles
+# that require a real domain / public internet and therefore cannot be tested
+# in a container:
+#   - certbot  : needs a real Let's Encrypt domain validation (port 80, public)
+#   - validate : needs https://zer0c00l.in to be publicly reachable with a valid cert
+#
+# Because certbot is skipped, the Apache vhost (which points at
+# /etc/letsencrypt/live/zer0c00l.in/*.pem) would fail to start httpd. The
+# pre-task below generates a self-signed cert at exactly those paths so the
+# apache role can start httpd and the full stack comes up.
+#
+# Run from the control container (host Ansible is broken on this machine):
+#   docker run --rm --network zer0c00l-test \
+#     -v <repo>:/playbook -w /playbook/ansible \
+#     zer0c00l-control ansible-playbook -i inventory.docker.ini site.test.yml \
+#       --vault-password-file .vault_pass \
+#       -e ansible_host=zer0c00l-target -e ansible_port=22 \
+#       -e ansible_ssh_private_key_file=/playbook/ansible/.docker_test/test_key
+
+- name: Test the zer0c00l.in stack against the Docker target (skips certbot + validate)
+  hosts: all
+  become: true
+  vars:
+    # Let the stack be reached from the Docker host via localhost (there is no
+    # real domain in the test environment). This is what makes
+    # https://localhost:<port>/cloud/ work in the browser.
+    nextcloud_trusted_domains:
+      - zer0c00l.in
+      - localhost
+      - 127.0.0.1
+    # The stock ssl.conf vhost is the DEFAULT for :443, so a request with
+    # Host: localhost would otherwise fall through to it (the AlmaLinux test
+    # page). Adding localhost/127.0.0.1 as ServerAlias makes our vhost match
+    # them, so https://localhost/ serves the real site.
+    apache_server_aliases:
+      - localhost
+      - 127.0.0.1
+    # Canonical host Nextcloud uses to build absolute URLs. In the test env the
+    # stack is reached via localhost (zer0c00l.in is not resolvable), so point
+    # overwritehost/overwrite.cli.url at localhost to keep generated URLs valid.
+    nextcloud_overwrite_host: localhost
+  pre_tasks:
+    - name: Ensure the Let's Encrypt live directory exists
+      ansible.builtin.file:
+        path: /etc/letsencrypt/live/zer0c00l.in
+        state: directory
+        mode: "0755"
+
+    - name: Generate a self-signed cert at the Let's Encrypt paths (test-only stand-in for certbot)
+      ansible.builtin.command: >
+        openssl req -x509 -nodes -newkey rsa:2048 -days 2
+        -keyout /etc/letsencrypt/live/zer0c00l.in/privkey.pem
+        -out /etc/letsencrypt/live/zer0c00l.in/fullchain.pem
+        -subj "/CN=zer0c00l.in"
+      args:
+        creates: /etc/letsencrypt/live/zer0c00l.in/fullchain.pem
+
+  roles:
+    - common
+    - mariadb
+    # nextcloud must run before fail2ban so the Nextcloud log file exists for
+    # the nextcloud jail to validate against.
+    - nextcloud
+    - fail2ban
+    - apache

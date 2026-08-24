@@ -7,14 +7,15 @@
     # 1. Base packages, PHP 8.4, httpd, certbot, static files, symlink
     - role: common
 
-    # 2. Security: fail2ban for SSH and Nextcloud protection
-    - role: fail2ban
-
-    # 3. Database for Nextcloud
+    # 2. Database for Nextcloud
     - role: mariadb
 
-    # 4. Nextcloud application
+    # 3. Nextcloud application (must run before fail2ban so the Nextcloud
+    #    log file exists for the nextcloud jail to validate against)
     - role: nextcloud
+
+    # 4. Security: fail2ban for SSH and Nextcloud protection
+    - role: fail2ban
 
     # 5. Apache vhost + SSL configuration
     - role: apache

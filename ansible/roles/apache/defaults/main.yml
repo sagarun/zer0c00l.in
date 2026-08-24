@@ -4,3 +4,6 @@
 apache_domain: zer0c00l.in
 apache_document_root: "/var/www/{{ apache_domain }}/public_html"
 apache_server_aliases: []
+
+# Remi php84 php-fpm socket (must match the listen address in www.conf)
+apache_php_fpm_socket: /var/opt/remi/php84/run/php-fpm/www.sock

@@ -1,8 +1,9 @@
 [DEFAULT]
 # Ban hosts for one hour
 bantime = 3600
-# Override /etc/fail2ban/jail.d/00-firewalld.conf:
-banaction = iptables-multiport
+# EL10 uses nftables (not iptables). Use the nftables banaction so bans
+# actually take effect. (Override /etc/fail2ban/jail.d/00-firewalld.conf.)
+banaction = nftables
 # A host is banned if it has generated "maxretry" during "findtime" seconds
 findtime = 600
 maxretry = 5
@@ -10,7 +11,9 @@ maxretry = 5
 [sshd]
 enabled = {{ 'true' if fail2ban_ssh_enabled else 'false' }}
 port = ssh
-logpath = /var/log/secure
+# Read sshd auth failures from the systemd journal (reliable on EL10 where
+# /var/log/secure may not be written).
+backend = systemd
 maxretry = {{ fail2ban_ssh_maxretry }}
 bantime = {{ fail2ban_ssh_bantime }}
 findtime = {{ fail2ban_ssh_findtime }}

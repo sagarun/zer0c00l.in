@@ -48,6 +48,20 @@
   notify: restart fail2ban
   when: fail2ban_nextcloud_enabled | default(false)
 
+# Defensive: make sure the Nextcloud log file the jail reads actually exists
+# before fail2ban validates its configuration. Without this, a fresh run where
+# the nextcloud role has not yet created the log makes fail2ban-server exit
+# with "Have not found any log file for nextcloud jail". Creating it owned by
+# apache keeps it writable by Nextcloud.
+- name: Ensure the Nextcloud log file exists for the nextcloud jail
+  ansible.builtin.file:
+    path: "{{ fail2ban_nextcloud_logpath }}"
+    state: touch
+    owner: apache
+    group: apache
+    mode: "0640"
+  when: fail2ban_nextcloud_enabled | default(false)
+
 - name: Ensure fail2ban is enabled and running
   ansible.builtin.service:
     name: fail2ban

@@ -2,6 +2,20 @@
 # Role: nextcloud
 # Downloads and installs Nextcloud to /var/www/html/nextcloud and configures config.php
 
+- name: Fail if required Nextcloud secrets are not provided
+  # passwordsalt and secret sign sessions/tokens. They must come from Ansible
+  # Vault (group_vars/all/vault.yml). Failing loudly is safer than shipping
+  # an empty or randomly-regenerated value.
+  ansible.builtin.fail:
+    msg: >-
+      nextcloud_password_salt and nextcloud_secret must be set (via Ansible
+      Vault). Generate them with:
+        openssl rand -base64 48   # for both values
+  when:
+    - nextcloud_password_salt is not defined or nextcloud_password_salt | length == 0
+    - or
+    - nextcloud_secret is not defined or nextcloud_secret | length == 0
+
 - name: Ensure Nextcloud install directory parent exists
   ansible.builtin.file:
     path: "{{ nextcloud_web_root }}"
@@ -10,11 +24,41 @@
     group: "{{ nextcloud_http_group }}"
     mode: "0755"
 
-- name: Download Nextcloud archive
-  ansible.builtin.get_url:
-    url: "{{ nextcloud_download_url }}"
-    dest: "/tmp/nextcloud-{{ nextcloud_version }}.tar.bz2"
-    mode: "0644"
+# --- Idempotent version check ---
+# Detect the version already on disk (from version.php) so we only download +
+# extract when it differs from the target. A host already at the desired
+# version is a clean no-op; a fresh install (no version.php) installs.
+#
+# NOTE: this uses slurp (a read-only module) rather than a `command` grep, so
+# the detection also works in --check mode. A `command` task is skipped in
+# check mode, which would leave the installed version empty and cause a
+# spurious download + extract.
+- name: Check whether version.php exists
+  ansible.builtin.stat:
+    path: "{{ nextcloud_install_dir }}/version.php"
+  register: nextcloud_version_php
+
+- name: Read version.php (read-only, check-mode safe)
+  ansible.builtin.slurp:
+    src: "{{ nextcloud_install_dir }}/version.php"
+  register: nextcloud_version_php_raw
+  when: nextcloud_version_php.stat.exists
+
+- name: Set installed Nextcloud version fact
+  ansible.builtin.set_fact:
+    nextcloud_installed_version: >-
+      {{
+        ((nextcloud_version_php_raw.content | b64decode)
+         if nextcloud_version_php.stat.exists
+         else '')
+        | regex_findall("OC_VersionString = '([^']+)'")
+        | first
+        | default('')
+      }}
+
+- name: Determine whether Nextcloud needs (re)installing
+  ansible.builtin.set_fact:
+    nextcloud_needs_install: "{{ nextcloud_installed_version != nextcloud_version }}"
 
 - name: Remove existing Nextcloud directory if requested
   ansible.builtin.file:
@@ -22,12 +66,23 @@
     state: absent
   when: nextcloud_reinstall | default(false)
 
+- name: Download Nextcloud archive
+  ansible.builtin.get_url:
+    url: "{{ nextcloud_download_url }}"
+    dest: "/tmp/nextcloud-{{ nextcloud_version }}.tar.bz2"
+    mode: "0644"
+  when: nextcloud_needs_install
+
 - name: Extract Nextcloud archive to web root
+  # Gated on nextcloud_needs_install so a host already at the target version
+  # is not re-extracted (which would be a no-op but also a needless 280MB
+  # download + full-tree overwrite). unarchive overwrites in place, which is
+  # safe for a genuine version bump.
   ansible.builtin.unarchive:
     src: "/tmp/nextcloud-{{ nextcloud_version }}.tar.bz2"
     dest: "{{ nextcloud_web_root }}"
     remote_src: true
-    creates: "{{ nextcloud_install_dir }}/version.php"
+  when: nextcloud_needs_install
 
 - name: Ensure Nextcloud directory ownership
   ansible.builtin.file:

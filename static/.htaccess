@@ -12,11 +12,10 @@
   <IfModule mod_env.c>
     # Add security and privacy related headers
     Header set X-Content-Type-Options "nosniff"
-    Header set X-XSS-Protection "1; mode=block"
-    Header set X-Robots-Tag "none"
-    Header set X-Download-Options "noopen"
     Header set X-Permitted-Cross-Domain-Policies "none"
-    Header set Referrer-Policy "no-referrer"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+    # Enforce HTTPS (HSTS). Only set once the site is confirmed HTTPS-only.
+    Header set Strict-Transport-Security "max-age=31536000; includeSubDomains"
     SetEnv modHeadersAvailable true
   </IfModule>
 
@@ -30,29 +29,8 @@
     Header set Cache-Control "max-age=604800"
   </FilesMatch>
 </IfModule>
-<IfModule mod_php5.c>
-  php_value upload_max_filesize 511M
-  php_value post_max_size 511M
-  php_value memory_limit 512M
-  php_value mbstring.func_overload 0
-  php_value always_populate_raw_post_data -1
-  php_value default_charset 'UTF-8'
-  php_value output_buffering 0
-  <IfModule mod_env.c>
-    SetEnv htaccessWorking true
-  </IfModule>
-</IfModule>
-<IfModule mod_php7.c>
-  php_value upload_max_filesize 511M
-  php_value post_max_size 511M
-  php_value memory_limit 512M
-  php_value mbstring.func_overload 0
-  php_value default_charset 'UTF-8'
-  php_value output_buffering 0
-  <IfModule mod_env.c>
-    SetEnv htaccessWorking true
-  </IfModule>
-</IfModule>
+# PHP runs via php-fpm (see the Apache vhost), so no per-directory php_value
+# settings are needed here.
 <IfModule mod_rewrite.c>
   RewriteEngine on
   RewriteCond %{HTTP_USER_AGENT}  DavClnt

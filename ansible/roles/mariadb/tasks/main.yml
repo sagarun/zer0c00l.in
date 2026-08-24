@@ -15,16 +15,34 @@
     state: directory
     mode: "0755"
 
-- name: Configure MariaDB to listen only on localhost
+- name: Configure MariaDB to listen only on localhost and apply hardening
   ansible.builtin.copy:
     dest: /etc/my.cnf.d/bind-address.cnf
     content: |
       [mysqld]
+      # Only accept local connections (Nextcloud connects via the unix socket).
       bind-address = 127.0.0.1
+      # Skip reverse DNS lookups (faster, and avoids host-based surprises).
+      skip-name-resolve
+      # Disallow clients loading local files via LOAD DATA LOCAL.
+      local-infile = 0
     owner: root
     group: root
     mode: "0644"
   notify: restart mariadb
+
+- name: Remove anonymous MariaDB users
+  community.mysql.mysql_user:
+    name: ""
+    host: "{{ item }}"
+    state: absent
+    login_user: root
+    login_unix_socket: "{{ mariadb_unix_socket }}"
+  loop:
+    - localhost
+    - 127.0.0.1
+    - "::1"
+  ignore_errors: true
 
 - name: Ensure MariaDB is enabled and running
   ansible.builtin.service:

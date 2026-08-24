@@ -31,7 +31,77 @@ The inventory file (`inventory.ini`) is configured with:
 
 Sensitive variables are stored in `group_vars/all/vault.yml` and encrypted with Ansible Vault. You'll need the vault password to decrypt these during playbook execution.
 
+### Required Nextcloud secrets
+
+The `nextcloud` role **fails immediately** if these two variables are not set, because they sign Nextcloud sessions and tokens. They must be present in the vault (or passed on the command line):
+
+- `nextcloud_password_salt`
+- `nextcloud_secret`
+
+Generate both with:
+
+```bash
+openssl rand -base64 48
+```
+
+You can supply them via the vault, or directly on the command line:
+
+```bash
+ansible-playbook -i inventory.ini site.yml --ask-vault-pass \
+  -e nextcloud_password_salt="$(openssl rand -base64 48)" \
+  -e nextcloud_secret="$(openssl rand -base64 48)"
+```
+
+> **Warning:** if you regenerate these values on an existing install, all
+> existing Nextcloud sessions and tokens are invalidated and users will be
+> signed out. Only set them once (or change them deliberately).
+
+Other vault-backed variables the roles expect: `nextcloud_db_password`,
+`nextcloud_s3_access_key`, and `nextcloud_s3_secret_key`.
+
 ## Running the Playbook
+
+### Running from WSL (Windows control machine)
+
+The control machine is Windows, and Ansible runs inside **WSL**. The workflow
+is:
+
+1. **Start/reuse the ssh-agent** (once per session) so the key is loaded and
+   its env is persisted to `~/.ssh/agent_env`:
+   ```bash
+   wsl -e bash -lc 'bash /mnt/c/Users/Arun/work/zer0c00l.in/ansible/wsl_agent_setup.sh'
+   ```
+2. **Run the playbook** (apply mode). `wsl_run.sh` sources `~/.ssh/agent_env`
+   for SSH auth and reads the vault password from `.vault_pass` (same dir) via
+   `--vault-password-file`, so the password is never typed or echoed:
+   ```bash
+   wsl -e bash -lc 'bash /mnt/c/Users/Arun/work/zer0c00l.in/ansible/wsl_run.sh'
+   ```
+   Output goes to `ansible/run.log`.
+3. **Dry run** (check mode) is `wsl_dryrun.sh` → `ansible/dryrun.log`.
+
+**Script layout** (kept in `ansible/`):
+- `wsl_run.sh` — the actual apply run (this is the one to use).
+- `wsl_dryrun.sh` — check-mode (`--check --diff`) variant.
+- `wsl_agent_setup.sh` — **prerequisite**: creates `~/.ssh/agent_env` that the
+  above scripts source. Do not delete.
+
+One-off helper scripts (port tests, ssh auth checks, version lookups, etc.)
+live in `ansible/.test_scripts/` and are git-ignored. They are not part of the
+run workflow. This also includes `run_ansible.py`, a Windows-side shim that
+patches `os.get_blocking` (a Python 3.15+ API) and forces a UTF-8 locale so
+`ansible-playbook` runs under the local Python 3.10 venv + ansible 10.7.0. It
+is only needed if you run Ansible natively on Windows; the WSL workflow above
+does not use it.
+
+> **Gotcha (learned 2026-08-24):** the `nextcloud` role's version detection
+> originally used `regex_replace(..., '\\1')`. In a YAML single-quoted scalar
+> `'\\1'` is the literal 3-char string `\\1`, so `re.sub` replaced the match
+> with literal `\1` text instead of the captured group — the "installed
+> version" fact became the whole raw `version.php` and never matched the
+> target, forcing a 280 MB re-download every run. Fixed by using
+> `regex_findall("OC_VersionString = '([^']+)'") | first | default('')`
+> (no backreference). See `roles/nextcloud/tasks/main.yml`.
 
 ### Basic Execution
 
@@ -56,17 +126,29 @@ If you have the vault password stored in `.vault_pass`:
 ansible-playbook -i inventory.ini site.yml --vault-password-file .vault_pass
 ```
 
-### Running Specific Roles
+### Running a Subset of the Deployment
 
-To run only specific roles, use tags (if configured) or limit execution:
+There are two playbooks:
+
+- **`site.yml`** — the full deployment: static site, fail2ban, MariaDB,
+  Nextcloud, Apache, certbot, and validation. Use this for a fresh install or
+  a full re-deploy.
+- **`nextcloud.yml`** — Nextcloud only (re-extract + reconfigure + validate).
+  Use this for routine Nextcloud version bumps without touching the rest of
+  the stack.
 
 ```bash
-# Run only the common role
-ansible-playbook -i inventory.ini site.yml --ask-vault-pass --tags common
+# Full deployment (all roles)
+ansible-playbook -i inventory.ini site.yml --ask-vault-pass
 
-# Run only security-related roles
-ansible-playbook -i inventory.ini site.yml --ask-vault-pass --tags fail2ban
+# Nextcloud-only redeploy / upgrade
+ansible-playbook -i inventory.ini nextcloud.yml --ask-vault-pass
 ```
+
+> Note: the roles in this project do not define Ansible tags, so `--tags`
+> cannot be used to select individual roles. To re-run a single concern, use
+> `nextcloud.yml` (Nextcloud) or re-run `site.yml` — it is idempotent, so
+> re-running it only applies the changes that are actually needed.
 
 ### Dry Run (Check Mode)
 
@@ -114,6 +196,11 @@ Key variables that may need adjustment:
 - `nextcloud_version`: Nextcloud version to install
 - `fail2ban_*`: fail2ban configuration parameters
 
+Required (vault-backed) variables — the playbook fails without these:
+- `nextcloud_password_salt`, `nextcloud_secret` (see [Required Nextcloud secrets](#required-nextcloud-secrets))
+- `nextcloud_db_password`
+- `nextcloud_s3_access_key`, `nextcloud_s3_secret_key`
+
 ## Troubleshooting
 
 ### Connection Issues
@@ -129,6 +216,17 @@ If vault decryption fails:
 - Ensure you're using the correct vault password
 - Verify `group_vars/all/vault.yml` is properly encrypted
 - Try re-encrypting: `ansible-vault encrypt group_vars/all/vault.yml`
+
+### "nextcloud_password_salt and nextcloud_secret must be set"
+
+The `nextcloud` role fails fast when these secrets are missing. Provide them via
+the vault or on the command line (see [Required Nextcloud secrets](#required-nextcloud-secrets)):
+
+```bash
+ansible-playbook -i inventory.ini site.yml --ask-vault-pass \
+  -e nextcloud_password_salt="$(openssl rand -base64 48)" \
+  -e nextcloud_secret="$(openssl rand -base64 48)"
+```
 
 ### Certificate Issues
 
@@ -168,7 +266,21 @@ After successful deployment:
 
 ### Updating Nextcloud
 
-To update Nextcloud, modify `nextcloud_version` in `roles/nextcloud/defaults/main.yml` and re-run the playbook.
+To update Nextcloud, bump `nextcloud_version` in
+`roles/nextcloud/defaults/main.yml` and re-run the Nextcloud-only playbook:
+
+```bash
+ansible-playbook -i inventory.ini nextcloud.yml --ask-vault-pass
+```
+
+> **Major version jumps (e.g. 23 → 31) are not in-place upgrades.** Before
+> re-running with a new major version you must:
+> 1. Back up the database (`mysqldump`) and the data directory / S3 bucket.
+> 2. Set `nextcloud_reinstall: true` so the old tree is removed.
+> 3. Restore the database and re-point `datadirectory`, or migrate via the
+>    official Nextcloud upgrade path.
+>
+> See the comments in `roles/nextcloud/defaults/main.yml` for details.
 
 ### Renewing Certificates
 

@@ -27,3 +27,20 @@
     creates: "/etc/letsencrypt/live/{{ certbot_domain }}/fullchain.pem"
   register: certbot_result
   changed_when: certbot_result.rc == 0
+
+# --- Automatic renewal schedule ---
+# The certbot package ships a systemd timer that runs `certbot renew` twice
+# daily. `certbot renew` is idempotent: it only renews a certificate when it is
+# within 30 days of expiry (Let's Encrypt certs last ~90 days), so this keeps
+# the cert renewed automatically well before it lapses. The --apache plugin's
+# renewal hook reloads httpd after a successful renewal.
+#
+# Note: the unit was renamed from `certbot.timer` to `certbot-renew.timer` in
+# certbot-4.2.0-1.el10_2.
+
+- name: Ensure certbot renewal timer is enabled and active
+  ansible.builtin.systemd:
+    name: "{{ certbot_renew_timer }}"
+    enabled: true
+    state: started
+    masked: false

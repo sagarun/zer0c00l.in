@@ -2,8 +2,23 @@
 # Defaults for nextcloud role
 
 # Version and download URL
-nextcloud_version: "23.0.12"
+# Track the current stable release line and bump this on each security
+# release. The role is idempotent: it detects the version already on disk
+# (from version.php) and only downloads + extracts when it differs from this
+# target, so re-runs are a no-op once the host is at the desired version.
+#
+# NOTE: bumping the code version here does NOT run `occ upgrade` (DB schema
+# migration). For a major version jump the database must be migrated via the
+# official Nextcloud upgrade path (or `occ upgrade`) separately — in this
+# deployment that is done manually in production.
+nextcloud_version: "34.0.3"
 nextcloud_download_url: "https://download.nextcloud.com/server/releases/nextcloud-{{ nextcloud_version }}.tar.bz2"
+
+# Set true to wipe and re-extract Nextcloud (used for major version changes).
+# Default is false: the version-detection logic above already handles upgrades
+# by overwriting files in place via unarchive, which preserves config/data.
+# Pass --extra-vars nextcloud_reinstall=true only for a full clean reinstall.
+nextcloud_reinstall: false
 
 # Installation paths
 nextcloud_web_root: /var/www/html
@@ -31,3 +46,14 @@ nextcloud_s3_autocreate: true
 # Access key / secret should come from vault:
 # nextcloud_s3_access_key
 # nextcloud_s3_secret_key
+
+# Hosts Nextcloud will accept requests from. Defaults to the primary domain.
+# site.test.yml extends this with localhost/127.0.0.1 so the stack can be
+# exercised from the Docker host without a real domain.
+nextcloud_trusted_domains:
+  - "{{ certbot_domain | default('zer0c00l.in') }}"
+
+# Canonical host Nextcloud uses to build absolute URLs (overwritehost and
+# overwrite.cli.url in config.php). Defaults to the primary domain; override
+# per-environment (e.g. localhost in the Docker test) if needed.
+nextcloud_overwrite_host: "{{ certbot_domain | default('zer0c00l.in') }}"

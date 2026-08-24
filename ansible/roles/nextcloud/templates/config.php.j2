@@ -1,17 +1,28 @@
 <?php
 $CONFIG = array (
   'instanceid' => '{{ nextcloud_instance_id | default("oc" ~ 999999|random) }}',
-  'passwordsalt' => '{{ nextcloud_password_salt | default("") }}',
-  'secret' => '{{ nextcloud_secret | default("") }}',
+  # passwordsalt and secret sign sessions and tokens. They MUST be provided
+  # via Ansible Vault (see the fail task in tasks/main.yml). An empty value
+  # is a critical weakness, so we never fall back to a default here.
+  'passwordsalt' => '{{ nextcloud_password_salt }}',
+  'secret' => '{{ nextcloud_secret }}',
   'trusted_domains' =>
   array (
-    0 => '{{ certbot_domain | default("zer0c00l.in") }}',
+{% for domain in nextcloud_trusted_domains %}
+    {{ loop.index0 }} => '{{ domain }}',
+{% endfor %}
   ),
   'datadirectory' => '/var/owncloud/data',
   'logfile' => '/var/owncloud/data/nextcloud.log',
+  'log_type' => 'file',
+  'loglevel' => 2,
   'dbtype' => 'mysql',
   'version' => '{{ nextcloud_version }}',
-  'overwrite.cli.url' => 'https://{{ certbot_domain | default("zer0c00l.in") }}',
+  'overwrite.cli.url' => 'https://{{ nextcloud_overwrite_host }}',
+  # Force the canonical host/protocol so Nextcloud builds correct URLs even
+  # when served from a subdirectory behind a proxy.
+  'overwritehost' => '{{ nextcloud_overwrite_host }}',
+  'overwriteprotocol' => 'https',
   'dbname' => '{{ nextcloud_db_name }}',
   'dbhost' => '{{ nextcloud_db_host }}',
   'dbport' => '',
@@ -24,7 +35,9 @@ $CONFIG = array (
   'mail_smtpsecure' => 'tls',
   'mail_smtphost' => 'smtp.zoho.com',
   'mail_smtpport' => '587',
-  'updatechecker' => false,
+  # Keep the update checker ON so the admin UI surfaces available security
+  # updates. Actual upgrades are driven by Ansible (bump nextcloud_version).
+  'updatechecker' => true,
   'mail_from_address' => 'admin',
   'mail_domain' => 'zer0c00l.in',
   'updater.release.channel' => 'stable',

@@ -10,3 +10,7 @@ certbot_staging: false
 
 # Whether to enable automatic HTTP->HTTPS redirect (certbot --redirect)
 certbot_redirect: false
+
+# Systemd timer unit that schedules `certbot renew`.
+# Renamed from `certbot.timer` to `certbot-renew.timer` in certbot-4.2.0-1.el10_2.
+certbot_renew_timer: certbot-renew.timer

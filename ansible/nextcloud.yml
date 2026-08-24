@@ -1,0 +1,21 @@
+---
+# Playbook: redeploy/upgrade Nextcloud ONLY.
+#
+# This re-extracts and re-configures Nextcloud and then validates that the
+# site is reachable. It intentionally leaves the static site, Apache, MariaDB,
+# fail2ban, and certbot untouched, so it is safe to run for routine Nextcloud
+# version bumps.
+#
+#   ansible-playbook -i inventory.ini nextcloud.yml --ask-vault-pass
+#
+# For a full deployment (static site + all services), run site.yml instead.
+- name: Redeploy Nextcloud and validate
+  hosts: all
+  become: true
+
+  roles:
+    - role: nextcloud
+
+    # Validate that the site is reachable over HTTPS
+    - role: validate
+

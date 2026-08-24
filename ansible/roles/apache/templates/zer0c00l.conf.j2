@@ -1,17 +1,37 @@
+# --- Global SSL session cache ---
+# SSLSessionCache / SSLSessionCacheTimeout are server-level directives and are
+# NOT allowed inside a <VirtualHost>, so they live here at server scope.
+# Use the "shmcb" provider (mod_socache_shmcb); the legacy "shared" alias is
+# not registered in this Apache build.
+<IfModule mod_ssl.c>
+    SSLSessionCache         shmcb:SSL:10m
+    SSLSessionCacheTimeout  300
+</IfModule>
+
+# Disable directory listing and MultiViews across the whole site.
+# (Nextcloud and the static site do not rely on either.)
+# The static site needs no .htaccess overrides, so disable them (defense in
+# depth: a writable web root cannot inject a malicious .htaccess).
+<Directory "/var/www/{{ apache_domain }}/public_html/">
+    Options -Indexes -MultiViews +FollowSymLinks
+    AllowOverride None
+    Require all granted
+</Directory>
+
 <Directory "/var/www/{{ apache_domain }}/public_html/cloud/">
-    Options Indexes FollowSymLinks MultiViews
+    Options -Indexes -MultiViews +FollowSymLinks
     AllowOverride All
     Require all granted
 </Directory>
 
 <Directory "/var/www/{{ apache_domain }}/public_html/.well-known/">
-    Options Indexes FollowSymLinks MultiViews
-    AllowOverride All
+    Options -Indexes -MultiViews +FollowSymLinks
+    AllowOverride None
     Require all granted
 </Directory>
 
 <Directory "/var/www/{{ apache_domain }}/public_html/element/">
-    Options All Indexes FollowSymLinks
+    Options -Indexes -MultiViews +FollowSymLinks
     Require all granted
 </Directory>
 
@@ -24,26 +44,42 @@
     RedirectMatch 301 (.*) https://{{ apache_domain }}$1
 </VirtualHost>
 
-<IfFile "/etc/letsencrypt/live/{{ apache_domain }}/privkey.pem">
-    <VirtualHost *:443>
-        ServerName {{ apache_domain }}
+<VirtualHost *:443>
+    ServerName {{ apache_domain }}
 {% for alias in apache_server_aliases %}
-        ServerAlias {{ alias }}
+    ServerAlias {{ alias }}
 {% endfor %}
-        DocumentRoot {{ apache_document_root }}
+    DocumentRoot {{ apache_document_root }}
 
-        SSLEngine on
-        SSLCertificateKeyFile /etc/letsencrypt/live/{{ apache_domain }}/privkey.pem
-        SSLCertificateFile /etc/letsencrypt/live/{{ apache_domain }}/cert.pem
-        SSLCertificateChainFile /etc/letsencrypt/live/{{ apache_domain }}/fullchain.pem
+    # Route PHP requests to the Remi php84 php-fpm socket
+    <FilesMatch \.(php|phar)$>
+        SetHandler "proxy:unix:{{ apache_php_fpm_socket }}|fcgi://localhost"
+    </FilesMatch>
 
-        # intermediate configuration, tweak to your needs
-        SSLProtocol             all -SSLv2 -SSLv3
-        SSLCipherSuite          ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-DSS-AES128-GCM-SHA256:kEDH+AESGCM:ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA:ECDHE-ECDSA-AES256-SHA:DHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA:DHE-DSS-AES128-SHA256:DHE-RSA-AES256-SHA256:DHE-DSS-AES256-SHA:DHE-RSA-AES256-SHA:AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA256:AES256-SHA256:AES128-SHA:AES256-SHA:AES:CAMELLIA:DES-CBC3-SHA:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!aECDH:!EDH-DSS-DES-CBC3-SHA:!EDH-RSA-DES-CBC3-SHA:!KRB5-DES-CBC3-SHA
-        SSLHonorCipherOrder     on
+    SSLEngine on
+    # fullchain.pem already contains the leaf + intermediate chain, so a
+    # separate SSLCertificateChainFile (deprecated since Apache 2.4.8) is not
+    # needed. The key file holds only the private key.
+    SSLCertificateKeyFile /etc/letsencrypt/live/{{ apache_domain }}/privkey.pem
+    SSLCertificateFile /etc/letsencrypt/live/{{ apache_domain }}/fullchain.pem
 
-        # HSTS (mod_headers is required) (15768000 seconds = 6 months)
-        Header always add Strict-Transport-Security "max-age=15768000"
-    </VirtualHost>
-</IfFile>
+        # --- TLS hardening (Mozilla "intermediate" profile) ---
+        # Only TLS 1.2 and 1.3; drop TLS 1.0/1.1 and all legacy ciphers.
+        # Note: TLS 1.3 cipher suites are fixed by the protocol (RFC 8446) and
+        # cannot be disabled or reordered, so no SSLCipherSuiteTLSv1.3 is set.
+        SSLProtocol             -all +TLSv1.2 +TLSv1.3
+        SSLCipherSuite          ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384
+        SSLHonorCipherOrder     off
+        SSLSessionTickets        off
+
+        # --- Security headers (mod_headers required) ---
+        # HSTS: 2 years, include subdomains, preload-ready.
+        Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        Header always set X-Content-Type-Options "nosniff"
+        Header always set X-Frame-Options "SAMEORIGIN"
+        Header always set Referrer-Policy "strict-origin-when-cross-origin"
+        Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+        # Remove the legacy X-Powered-By header if PHP ever adds it.
+        Header always unset X-Powered-By
+</VirtualHost>
 

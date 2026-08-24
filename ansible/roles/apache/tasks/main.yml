@@ -7,6 +7,90 @@
     name: httpd
     state: present
 
+- name: Ensure mod_ssl is installed (required for the TLS vhost)
+  ansible.builtin.dnf:
+    name: mod_ssl
+    state: present
+
+- name: Ensure mod_ssl is loaded (required for SSL* directives)
+  ansible.builtin.copy:
+    dest: /etc/httpd/conf.modules.d/92-ssl.conf
+    content: |
+      LoadModule ssl_module modules/mod_ssl.so
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart httpd
+
+- name: Ensure mod_proxy_fcgi is enabled (required to proxy PHP to php-fpm)
+  ansible.builtin.copy:
+    dest: /etc/httpd/conf.modules.d/90-php-fpm.conf
+    content: |
+      # mod_proxy is loaded by default on RHEL/Fedora; only add proxy_fcgi.
+      LoadModule proxy_fcgi_module modules/mod_proxy_fcgi.so
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart httpd
+
+- name: Ensure mod_headers is enabled (required for security headers)
+  ansible.builtin.copy:
+    dest: /etc/httpd/conf.modules.d/91-headers.conf
+    content: |
+      LoadModule headers_module modules/mod_headers.so
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart httpd
+
+- name: Apply global Apache hardening (hide version, disable TRACE, sane defaults)
+  ansible.builtin.copy:
+    dest: /etc/httpd/conf.d/99-hardening.conf
+    content: |
+      # Hide Apache version and OS from the Server header and error pages.
+      ServerTokens Prod
+      ServerSignature Off
+
+      # Disable the TRACE method (XST mitigation).
+      TraceEnable Off
+
+      # Do not advertise the default server admin.
+      ServerAdmin webmaster@{{ apache_domain }}
+
+      # Reject requests with a null byte in the path.
+      <IfModule mod_reqtimeout.c>
+        RequestReadTimeout header=10-20,MinRate=500 body=20,MinRate=500
+      </IfModule>
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart httpd
+
+# --- Reduce Apache attack surface ---
+# Disable modules that are not used by this site. mod_autoindex is kept because
+# the stock /etc/httpd/conf.d/autoindex.conf uses IndexOptions/AddIcon and would
+# fail to parse without it (directory listing itself is disabled via Options -Indexes).
+- name: Disable unused Apache module (info)
+  ansible.builtin.lineinfile:
+    path: /etc/httpd/conf.modules.d/00-base.conf
+    regexp: '^LoadModule info_module'
+    line: '#LoadModule info_module modules/mod_info.so'
+  notify: restart httpd
+
+- name: Disable unused Apache module (status)
+  ansible.builtin.lineinfile:
+    path: /etc/httpd/conf.modules.d/00-base.conf
+    regexp: '^LoadModule status_module'
+    line: '#LoadModule status_module modules/mod_status.so'
+  notify: restart httpd
+
+- name: Disable unused Apache module (userdir)
+  ansible.builtin.lineinfile:
+    path: /etc/httpd/conf.modules.d/00-base.conf
+    regexp: '^LoadModule userdir_module'
+    line: '#LoadModule userdir_module modules/mod_userdir.so'
+  notify: restart httpd
+
 - name: Ensure vhost document root exists
   ansible.builtin.file:
     path: "{{ apache_document_root }}"
@@ -30,8 +114,9 @@
     enabled: true
     state: started
 
-- name: Restart php84-php-fpm after httpd
+- name: Ensure php84-php-fpm is enabled and running
   ansible.builtin.service:
     name: php84-php-fpm
-    state: restarted
+    enabled: true
+    state: started
 

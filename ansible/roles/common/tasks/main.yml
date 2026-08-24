@@ -50,7 +50,6 @@
       - git
       - vim
       - bzip2
-      - php84-php
       - php84-php-cli
       - php84-php-common
       - php84-php-fpm
@@ -60,6 +59,7 @@
       - php84-php-mysqlnd
       - php84-php-opcache
       - php84-php-pdo
+      - php84-php-pecl-imagick-im7
       - php84-php-pecl-zip
       - php84-php-process
       - php84-php-sodium
@@ -77,6 +77,80 @@
     regexp: '^\s*memory_limit\s*='
     line: 'memory_limit = 512M'
     backrefs: false
+  notify: restart php84-php-fpm
+
+# --- Serve Nextcloud via php-fpm (not mod_php) ---
+
+- name: Remove mod_php (php84-php) so Remi conf falls back to the php-fpm handler
+  ansible.builtin.dnf:
+    name: php84-php
+    state: absent
+
+- name: Ensure php-fpm pool runs as the apache user
+  ansible.builtin.lineinfile:
+    path: /etc/opt/remi/php84/php-fpm.d/www.conf
+    regexp: '^\s*user\s*='
+    line: 'user = apache'
+    backrefs: false
+  notify: restart php84-php-fpm
+
+- name: Ensure php-fpm pool runs as the apache group
+  ansible.builtin.lineinfile:
+    path: /etc/opt/remi/php84/php-fpm.d/www.conf
+    regexp: '^\s*group\s*='
+    line: 'group = apache'
+    backrefs: false
+  notify: restart php84-php-fpm
+
+# --- PHP-FPM pool hardening ---
+
+- name: Restrict which file extensions php-fpm will execute
+  ansible.builtin.lineinfile:
+    path: /etc/opt/remi/php84/php-fpm.d/www.conf
+    regexp: '^\s*security\.limit_extensions\s*='
+    line: 'security.limit_extensions = .php .phar'
+    backrefs: false
+  notify: restart php84-php-fpm
+
+- name: Terminate long-running PHP requests (DoS mitigation)
+  ansible.builtin.lineinfile:
+    path: /etc/opt/remi/php84/php-fpm.d/www.conf
+    regexp: '^\s*request_terminate_timeout\s*='
+    line: 'request_terminate_timeout = 60'
+    backrefs: false
+  notify: restart php84-php-fpm
+
+- name: Capture worker output for easier debugging without leaking to client
+  ansible.builtin.lineinfile:
+    path: /etc/opt/remi/php84/php-fpm.d/www.conf
+    regexp: '^\s*catch_workers_output\s*='
+    line: 'catch_workers_output = yes'
+    backrefs: false
+  notify: restart php84-php-fpm
+
+- name: Clear the environment for PHP workers (avoid leaking env vars)
+  ansible.builtin.lineinfile:
+    path: /etc/opt/remi/php84/php-fpm.d/www.conf
+    regexp: '^\s*clear_env\s*='
+    line: 'clear_env = yes'
+    backrefs: false
+  notify: restart php84-php-fpm
+
+# --- PHP runtime hardening (php.ini) ---
+
+- name: Ensure PHP does not expose its version in headers
+  ansible.builtin.lineinfile:
+    path: /etc/opt/remi/php84/php.ini
+    regexp: '^\s*expose_php\s*='
+    line: 'expose_php = Off'
+    backrefs: false
+  notify: restart php84-php-fpm
+
+- name: Ensure php84-php-fpm is enabled and running
+  ansible.builtin.service:
+    name: php84-php-fpm
+    enabled: true
+    state: started
 
 - name: Ensure zer0c00l.in web root exists
   ansible.builtin.file:

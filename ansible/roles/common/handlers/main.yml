@@ -1,2 +1,7 @@
 ---
 # common role handlers
+
+- name: restart php84-php-fpm
+  ansible.builtin.service:
+    name: php84-php-fpm
+    state: restarted

@@ -1,0 +1,6 @@
+.docker_test
+.*_pass
+.test_scripts
+.pass
+.venv
+*.log
