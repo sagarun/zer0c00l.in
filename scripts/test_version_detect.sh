@@ -3,7 +3,7 @@
 echo "=== current install (expect 31.0.13) ==="
 grep -oP "(?<=OC_VersionString = ')[^']+" /var/www/html/nextcloud/version.php
 
-echo "=== 34.0.3 archive version.php (expect 34.0.3) ==="
+echo "=== 35.0.2 archive version.php (expect 35.0.2) ==="
 grep -oP "(?<=OC_VersionString = ')[^']+" /tmp/nextcloud/version.php
 
 echo "=== missing file (expect empty, exit!=0) ==="

@@ -4,3 +4,6 @@
 .pass
 .venv
 *.log
+ansible/wsl_run.sh
+ansible/wsl_dryrun.sh
+ansible/wsl_agent_setup.sh

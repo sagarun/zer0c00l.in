@@ -1,341 +1,165 @@
 # Ansible Playbook for zer0c00l.in
 
-This Ansible playbook deploys and configures the zer0c00l.in website with Nextcloud, including all necessary services and security hardening.
+Deploys and configures the zer0c00l.in website with Nextcloud, including all
+necessary services and security hardening.
 
-## Overview
+## Quickstart
 
-The playbook sets up:
-- **Static website** deployment from `static/` directory
-- **Nextcloud** installation and configuration
-- **Apache** web server with SSL/TLS
-- **MariaDB** database (bound to localhost only)
-- **Let's Encrypt** SSL certificates
-- **fail2ban** for SSH and Nextcloud brute-force protection
-- **PHP 8.4** with required extensions
+```bash
+cd ansible
+
+# Full deployment (fresh install or re-deploy)
+ansible-playbook -i inventory.ini site.yml --ask-vault-pass
+
+# Nextcloud-only redeploy / upgrade
+ansible-playbook -i inventory.ini nextcloud.yml --ask-vault-pass
+
+# Dry run (check mode) — see what would change without applying it
+ansible-playbook -i inventory.ini site.yml --ask-vault-pass --check
+```
+
+You'll be prompted for the vault password. If you keep it in `.vault_pass`,
+pass `--vault-password-file .vault_pass` instead of `--ask-vault-pass`.
+
+## Supported playbooks
+
+| Playbook | What it does | Use it for |
+| --- | --- | --- |
+| `site.yml` | Full deployment: static site, MariaDB, Nextcloud, fail2ban, Apache, certbot, validation. | Fresh install or a full re-deploy. |
+| `nextcloud.yml` | Nextcloud only (re-extract + reconfigure + validate). | Routine Nextcloud version bumps without touching the rest of the stack. |
+| `site.test.yml` | Same stack as `site.yml` but **skips `certbot` and `validate`** (they need a real domain / public internet). Generates a self-signed cert so the stack comes up in a container. | Testing against the local Docker target. |
+
+All playbooks are **idempotent** — re-running only applies the changes that are
+actually needed.
+
+## Role execution order
+
+`site.yml` runs the roles in this order:
+
+1. **common** — base packages, PHP 8.4, static files
+2. **mariadb** — database setup
+3. **nextcloud** — Nextcloud installation
+4. **fail2ban** — SSH + Nextcloud brute-force protection
+5. **apache** — web server configuration
+6. **certbot** — SSL certificate acquisition
+7. **validate** — final reachability checks
+
+> `nextcloud` runs before `fail2ban` so the Nextcloud log file exists for the
+> nextcloud jail to validate against.
+
+Each role has its own documentation under `roles/<role>/README.md`:
+
+- [`common`](roles/common/README.md)
+- [`mariadb`](roles/mariadb/README.md)
+- [`nextcloud`](roles/nextcloud/README.md)
+- [`fail2ban`](roles/fail2ban/README.md)
+- [`apache`](roles/apache/README.md)
+- [`certbot`](roles/certbot/README.md)
+- [`validate`](roles/validate/README.md)
 
 ## Prerequisites
 
-1. **Ansible** installed on your control machine (version 2.9 or later)
-2. **SSH access** to the target server (zer0c00l.in)
-3. **SSH key** configured (`~/.ssh/id_rsa_docean` as specified in inventory)
-4. **Vault password** for decrypting encrypted variables
+1. **Ansible** installed on the control machine (version 2.9 or later).
+2. **SSH access** to the target server, with an SSH key configured in the
+   inventory.
+3. **Vault password** for decrypting encrypted variables.
 
-## Inventory
+## Vault
 
-The inventory file (`inventory.ini`) is configured with:
-- Host: `zer0c00l.in`
-- SSH user: `root`
-- SSH key: `~/.ssh/id_rsa_docean`
+Sensitive variables live in `group_vars/all/vault.yml` (encrypted with Ansible
+Vault). You need the vault password to decrypt them during execution.
 
-## Vault Configuration
+Required vault-backed variables (the playbook fails without these):
 
-Sensitive variables are stored in `group_vars/all/vault.yml` and encrypted with Ansible Vault. You'll need the vault password to decrypt these during playbook execution.
+- `nextcloud_password_salt`, `nextcloud_secret` — see
+  [`roles/nextcloud/README.md`](roles/nextcloud/README.md)
+- `nextcloud_db_password`
+- `nextcloud_s3_access_key`, `nextcloud_s3_secret_key`
 
-### Required Nextcloud secrets
+## Running the playbooks
 
-The `nextcloud` role **fails immediately** if these two variables are not set, because they sign Nextcloud sessions and tokens. They must be present in the vault (or passed on the command line):
-
-- `nextcloud_password_salt`
-- `nextcloud_secret`
-
-Generate both with:
-
-```bash
-openssl rand -base64 48
-```
-
-You can supply them via the vault, or directly on the command line:
-
-```bash
-ansible-playbook -i inventory.ini site.yml --ask-vault-pass \
-  -e nextcloud_password_salt="$(openssl rand -base64 48)" \
-  -e nextcloud_secret="$(openssl rand -base64 48)"
-```
-
-> **Warning:** if you regenerate these values on an existing install, all
-> existing Nextcloud sessions and tokens are invalidated and users will be
-> signed out. Only set them once (or change them deliberately).
-
-Other vault-backed variables the roles expect: `nextcloud_db_password`,
-`nextcloud_s3_access_key`, and `nextcloud_s3_secret_key`.
-
-## Running the Playbook
-
-### Running from WSL (Windows control machine)
-
-The control machine is Windows, and Ansible runs inside **WSL**. The workflow
-is:
-
-1. **Start/reuse the ssh-agent** (once per session) so the key is loaded and
-   its env is persisted to `~/.ssh/agent_env`:
-   ```bash
-   wsl -e bash -lc 'bash /mnt/c/Users/Arun/work/zer0c00l.in/ansible/wsl_agent_setup.sh'
-   ```
-2. **Run the playbook** (apply mode). `wsl_run.sh` sources `~/.ssh/agent_env`
-   for SSH auth and reads the vault password from `.vault_pass` (same dir) via
-   `--vault-password-file`, so the password is never typed or echoed:
-   ```bash
-   wsl -e bash -lc 'bash /mnt/c/Users/Arun/work/zer0c00l.in/ansible/wsl_run.sh'
-   ```
-   Output goes to `ansible/run.log`.
-3. **Dry run** (check mode) is `wsl_dryrun.sh` → `ansible/dryrun.log`.
-
-**Script layout** (kept in `ansible/`):
-- `wsl_run.sh` — the actual apply run (this is the one to use).
-- `wsl_dryrun.sh` — check-mode (`--check --diff`) variant.
-- `wsl_agent_setup.sh` — **prerequisite**: creates `~/.ssh/agent_env` that the
-  above scripts source. Do not delete.
-
-One-off helper scripts (port tests, ssh auth checks, version lookups, etc.)
-live in `ansible/.test_scripts/` and are git-ignored. They are not part of the
-run workflow. This also includes `run_ansible.py`, a Windows-side shim that
-patches `os.get_blocking` (a Python 3.15+ API) and forces a UTF-8 locale so
-`ansible-playbook` runs under the local Python 3.10 venv + ansible 10.7.0. It
-is only needed if you run Ansible natively on Windows; the WSL workflow above
-does not use it.
-
-> **Gotcha (learned 2026-08-24):** the `nextcloud` role's version detection
-> originally used `regex_replace(..., '\\1')`. In a YAML single-quoted scalar
-> `'\\1'` is the literal 3-char string `\\1`, so `re.sub` replaced the match
-> with literal `\1` text instead of the captured group — the "installed
-> version" fact became the whole raw `version.php` and never matched the
-> target, forcing a 280 MB re-download every run. Fixed by using
-> `regex_findall("OC_VersionString = '([^']+)'") | first | default('')`
-> (no backreference). See `roles/nextcloud/tasks/main.yml`.
-
-### Basic Execution
-
-Run the playbook with:
+### Basic execution
 
 ```bash
 cd ansible
 ansible-playbook -i inventory.ini site.yml --ask-vault-pass
 ```
 
-This will:
-1. Prompt you for the vault password
-2. Connect to zer0c00l.in via SSH
-3. Execute all roles in sequence
-4. Validate that the site and Nextcloud are accessible
+This prompts for the vault password, connects via SSH, runs all roles in
+sequence, and validates that the site and Nextcloud are reachable.
 
-### Using Vault Password File
+### Using a vault password file
 
-If you have the vault password stored in `.vault_pass`:
+If the vault password is stored in `.vault_pass`:
 
 ```bash
 ansible-playbook -i inventory.ini site.yml --vault-password-file .vault_pass
 ```
 
-### Running a Subset of the Deployment
-
-There are two playbooks:
-
-- **`site.yml`** — the full deployment: static site, fail2ban, MariaDB,
-  Nextcloud, Apache, certbot, and validation. Use this for a fresh install or
-  a full re-deploy.
-- **`nextcloud.yml`** — Nextcloud only (re-extract + reconfigure + validate).
-  Use this for routine Nextcloud version bumps without touching the rest of
-  the stack.
+### Nextcloud-only redeploy / upgrade
 
 ```bash
-# Full deployment (all roles)
-ansible-playbook -i inventory.ini site.yml --ask-vault-pass
-
-# Nextcloud-only redeploy / upgrade
 ansible-playbook -i inventory.ini nextcloud.yml --ask-vault-pass
 ```
 
-> Note: the roles in this project do not define Ansible tags, so `--tags`
-> cannot be used to select individual roles. To re-run a single concern, use
-> `nextcloud.yml` (Nextcloud) or re-run `site.yml` — it is idempotent, so
-> re-running it only applies the changes that are actually needed.
+### Dry run (check mode)
 
-### Dry Run (Check Mode)
-
-To see what changes would be made without actually applying them:
+See what would change without applying it:
 
 ```bash
 ansible-playbook -i inventory.ini site.yml --ask-vault-pass --check
 ```
 
-### Verbose Output
-
-For detailed output during execution:
+### Verbose output
 
 ```bash
-ansible-playbook -i inventory.ini site.yml --ask-vault-pass -v
-# or for even more detail:
-ansible-playbook -i inventory.ini site.yml --ask-vault-pass -vvv
+ansible-playbook -i inventory.ini site.yml --ask-vault-pass -v    # or -vvv
 ```
 
-## Role Execution Order
+> The roles do not define Ansible tags, so `--tags` cannot select individual
+> roles. To re-run a single concern, use `nextcloud.yml` (Nextcloud) or re-run
+> `site.yml` — it is idempotent.
 
-The playbook executes roles in this order:
+### Running the Docker test stack
 
-1. **common** - Base packages, PHP 8.4, static files
-2. **fail2ban** - Security hardening
-3. **mariadb** - Database setup
-4. **nextcloud** - Nextcloud installation
-5. **apache** - Web server configuration
-6. **certbot** - SSL certificate acquisition
-7. **validate** - Final validation checks
+`site.test.yml` exercises the stack against a local Docker target (AlmaLinux 10
++ sshd), skipping `certbot` and `validate`. Run it from the control container:
+
+```bash
+docker run --rm --network zer0c00l-test \
+  -v <repo>:/playbook -w /playbook/ansible \
+  zer0c00l-control ansible-playbook -i inventory.docker.ini site.test.yml \
+    --vault-password-file .vault_pass \
+    -e ansible_host=zer0c00l-target -e ansible_port=22 \
+    -e ansible_ssh_private_key_file=/playbook/ansible/.docker_test/test_key
+```
 
 ## Configuration
 
-### Customizing Variables
+- Role defaults: `roles/<role_name>/defaults/main.yml`
+- Group variables: `group_vars/all/vault.yml` (requires vault password)
+- Inventory-specific: `inventory.ini`
 
-- Role defaults: Edit files in `roles/<role_name>/defaults/main.yml`
-- Group variables: Edit `group_vars/all/vault.yml` (requires vault password)
-- Inventory-specific: Edit `inventory.ini`
+Key variables that may need adjustment: `certbot_domain`, `certbot_email`,
+`nextcloud_version`, and the `fail2ban_*` parameters. See each role's README
+for the full variable list.
 
-### Important Variables
+## Security notes
 
-Key variables that may need adjustment:
-- `certbot_domain`: Domain name for SSL certificate
-- `certbot_email`: Email for Let's Encrypt notifications
-- `nextcloud_version`: Nextcloud version to install
-- `fail2ban_*`: fail2ban configuration parameters
-
-Required (vault-backed) variables — the playbook fails without these:
-- `nextcloud_password_salt`, `nextcloud_secret` (see [Required Nextcloud secrets](#required-nextcloud-secrets))
-- `nextcloud_db_password`
-- `nextcloud_s3_access_key`, `nextcloud_s3_secret_key`
-
-## Troubleshooting
-
-### Connection Issues
-
-If SSH connection fails:
-- Verify SSH key path in `inventory.ini`
-- Test SSH connection manually: `ssh -i ~/.ssh/id_rsa_docean root@zer0c00l.in`
-- Check firewall rules allow SSH access
-
-### Vault Password Issues
-
-If vault decryption fails:
-- Ensure you're using the correct vault password
-- Verify `group_vars/all/vault.yml` is properly encrypted
-- Try re-encrypting: `ansible-vault encrypt group_vars/all/vault.yml`
-
-### "nextcloud_password_salt and nextcloud_secret must be set"
-
-The `nextcloud` role fails fast when these secrets are missing. Provide them via
-the vault or on the command line (see [Required Nextcloud secrets](#required-nextcloud-secrets)):
-
-```bash
-ansible-playbook -i inventory.ini site.yml --ask-vault-pass \
-  -e nextcloud_password_salt="$(openssl rand -base64 48)" \
-  -e nextcloud_secret="$(openssl rand -base64 48)"
-```
-
-### Certificate Issues
-
-If Let's Encrypt certificate acquisition fails:
-- Ensure DNS is properly configured for the domain
-- Verify port 80 is accessible (required for HTTP-01 challenge)
-- Check rate limits if testing repeatedly
-
-## Post-Deployment
-
-After successful deployment:
-
-1. **Verify services** are running:
-   ```bash
-   ssh -i ~/.ssh/id_rsa_docean root@zer0c00l.in
-   systemctl status httpd mariadb php84-php-fpm fail2ban
-   ```
-
-2. **Check Nextcloud** is accessible:
-   - Visit `https://zer0c00l.in/cloud/`
-   - Complete the Nextcloud setup wizard
-
-3. **Monitor fail2ban**:
-   ```bash
-   fail2ban-client status sshd
-   fail2ban-client status nextcloud
-   ```
-
-## Security Notes
-
-- MariaDB is configured to listen only on localhost (127.0.0.1)
-- fail2ban protects both SSH and Nextcloud from brute-force attacks
-- SSL/TLS is enforced with HSTS headers
-- All traffic is redirected from HTTP to HTTPS
+- MariaDB listens only on localhost (127.0.0.1).
+- fail2ban protects both SSH and Nextcloud from brute-force attacks.
+- SSL/TLS is enforced with HSTS headers; HTTP is redirected to HTTPS.
 
 ## Maintenance
 
-### Updating Nextcloud
-
-To update Nextcloud, bump `nextcloud_version` in
-`roles/nextcloud/defaults/main.yml` and re-run the Nextcloud-only playbook:
-
-```bash
-ansible-playbook -i inventory.ini nextcloud.yml --ask-vault-pass
-```
-
-> **Major version jumps (e.g. 23 → 31) are not in-place upgrades.** Before
-> re-running with a new major version you must:
-> 1. Back up the database (`mysqldump`) and the data directory / S3 bucket.
-> 2. Set `nextcloud_reinstall: true` so the old tree is removed.
-> 3. Restore the database and re-point `datadirectory`, or migrate via the
->    official Nextcloud upgrade path.
->
-> See the comments in `roles/nextcloud/defaults/main.yml` for details.
-
-### Renewing Certificates
-
-Let's Encrypt certificates are automatically renewed by certbot. Manual renewal:
-
-```bash
-ssh -i ~/.ssh/id_rsa_docean root@zer0c00l.in
-certbot renew
-```
-
-## CI/CD with GitHub Actions
-
-This repository includes a GitHub Actions workflow (`.github/workflows/ansible.yml`) that automatically validates and can deploy your Ansible playbook.
-
-### Setup GitHub Secrets
-
-To use the GitHub Actions workflow, you need to configure the following secrets in your GitHub repository:
-
-1. Go to your repository → **Settings** → **Secrets and variables** → **Actions**
-2. Add the following secrets:
-
-   - **`VAULT_PASSWORD`**: Your Ansible vault password
-   - **`SSH_PRIVATE_KEY`**: Contents of your SSH private key (`~/.ssh/id_rsa_docean`)
-
-### Workflow Jobs
-
-The workflow includes three jobs:
-
-1. **validate** - Runs on every push/PR:
-   - Syntax checks the playbook
-   - Lints the Ansible code
-   - Validates the inventory
-
-2. **dry-run** - Runs on pull requests:
-   - Executes the playbook in check mode (`--check --diff`)
-   - Shows what changes would be made without applying them
-
-3. **deploy** - Runs only on pushes to `main`/`master`:
-   - Actually deploys to production
-   - Requires manual approval if environment protection is enabled
-   - Runs validation after deployment
-
-### Manual Trigger
-
-You can manually trigger the workflow from the GitHub Actions tab → "Ansible Playbook CI/CD" → "Run workflow".
-
-### Security Notes
-
-- The `deploy` job uses the `production` environment, which can be configured to require manual approval
-- SSH keys and vault passwords are stored as encrypted secrets
-- The workflow only deploys on pushes to the main branch
+- **Updating Nextcloud** — bump `nextcloud_version` and re-run
+  `nextcloud.yml`. Major version jumps require a backup + `nextcloud_reinstall`
+  (see [`roles/nextcloud/README.md`](roles/nextcloud/README.md)).
+- **Renewing certificates** — Let's Encrypt certs are renewed automatically by
+  the `certbot-renew` timer. Manual: `certbot renew` on the target host.
 
 ## Support
 
-For issues or questions, refer to:
 - [Nextcloud Documentation](https://docs.nextcloud.com/)
 - [Ansible Documentation](https://docs.ansible.com/)
 - [GitHub Actions Documentation](https://docs.github.com/en/actions)

@@ -11,7 +11,7 @@
 # migration). For a major version jump the database must be migrated via the
 # official Nextcloud upgrade path (or `occ upgrade`) separately — in this
 # deployment that is done manually in production.
-nextcloud_version: "34.0.3"
+nextcloud_version: "35.0.2"
 nextcloud_download_url: "https://download.nextcloud.com/server/releases/nextcloud-{{ nextcloud_version }}.tar.bz2"
 
 # Set true to wipe and re-extract Nextcloud (used for major version changes).
