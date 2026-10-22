@@ -3,3 +3,7 @@
   ansible.builtin.service:
     name: httpd
     state: restarted
+
+- name: reload firewalld
+  ansible.builtin.command: firewall-cmd --reload
+  changed_when: true

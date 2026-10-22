@@ -114,6 +114,36 @@
     enabled: true
     state: started
 
+# Allow HTTP/HTTPS through firewalld. Without this the public zone only
+# permits ssh/cockpit, so external 80/443 are dropped even though httpd
+# is listening. Idempotent: each service is only added if not already allowed.
+- name: Check whether firewalld is running
+  ansible.builtin.command: firewall-cmd --state
+  register: apache_firewalld_state
+  changed_when: false
+  failed_when: false
+
+- name: Check which web services are already allowed
+  ansible.builtin.command: firewall-cmd --permanent --query-service={{ item }}
+  loop:
+    - http
+    - https
+  register: apache_firewalld_web_query
+  changed_when: false
+  failed_when: false
+  when: apache_firewalld_state.rc == 0
+
+- name: Allow missing web services in firewalld
+  ansible.builtin.command: firewall-cmd --permanent --add-service={{ item }}
+  loop: "{{ apache_firewalld_web_query.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when:
+    - apache_firewalld_state.rc == 0
+    - item.rc is defined
+    - item.rc != 0
+  notify: reload firewalld
+
 - name: Ensure php84-php-fpm is enabled and running
   ansible.builtin.service:
     name: php84-php-fpm
